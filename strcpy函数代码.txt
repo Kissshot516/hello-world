@@ -6,4 +6,4 @@ char * strcpy(char * dst, const char * src)
                 ;               /* Copy src over dst */
  
         return( dst );
-}
+}B21031809夏轩
