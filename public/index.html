@@ -1,0 +1,36 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Learning Demo</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel sidebar">
+        <div>
+          <p class="eyebrow">Agent Learning</p>
+          <h1>业务数据智能问答助手</h1>
+          <p class="summary">一个用于学习的最小闭环：前端输入问题，Node.js 接口服务判断意图，调用 mock 业务数据，再返回分析结果。</p>
+        </div>
+        <div class="tips">
+          <button class="prompt" data-message="最近 7 天有哪些告警？">最近 7 天有哪些告警？</button>
+          <button class="prompt" data-message="帮我分析一下钻孔异常情况">帮我分析一下钻孔异常情况</button>
+          <button class="prompt" data-message="你现在能做什么？">你现在能做什么？</button>
+        </div>
+      </section>
+
+      <section class="panel workspace">
+        <div id="messages" class="messages"></div>
+
+        <form id="chatForm" class="composer">
+          <input id="messageInput" autocomplete="off" placeholder="输入一个业务问题，比如：最近 7 天有哪些告警？" />
+          <button id="sendButton" type="submit">发送</button>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
