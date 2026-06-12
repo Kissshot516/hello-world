@@ -6,19 +6,27 @@
 
 ```bash
 cd D:\15832\agent-learning-demo
-npm run dev
+npm install
+npm run dev:api
+```
+
+再开一个终端：
+
+```bash
+cd D:\15832\agent-learning-demo
+npm run dev:web
 ```
 
 浏览器打开：
 
 ```text
-http://localhost:3333
+http://localhost:5173
 ```
 
 ## 当前链路
 
 ```text
-浏览器页面 -> POST /api/agent/chat -> Node.js 服务 -> mock 业务工具 -> 返回分析结果 -> 页面展示
+Vue 页面 -> Vite 代理 -> POST /api/agent/chat -> Node.js 服务 -> mock 业务工具 -> 返回分析结果 -> Vue 页面展示
 ```
 
 ## 你可以问
