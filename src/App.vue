@@ -1,7 +1,13 @@
 <script setup>
 import { nextTick, ref } from 'vue';
 
-const promptList = ['最近 7 天有哪些告警？', '帮我分析一下钻孔异常情况', '你现在能做什么？'];
+const promptList = [
+  '最近 7 天有哪些告警？',
+  '帮我分析一下钻孔异常情况',
+  '通知人员配置是什么？',
+  '工作面概况怎么样？',
+  '用一句话介绍什么是 Agent',
+];
 
 const inputText = ref('');
 const loading = ref(false);
@@ -12,11 +18,11 @@ const messages = ref([
     role: 'assistant',
     result: {
       mode: 'system:welcome',
-      answer: '欢迎来到第一个 Vue 版 Agent 学习 Demo。建议先点左侧示例问题，看一次完整请求链路。',
+      answer: '欢迎来到 Vue 版 Agent 学习 Demo。业务类问题会调用工具，普通问题会尝试调用大模型。',
       cards: [
         { label: '前端', value: 'Vue 3' },
         { label: '后端', value: 'Node.js HTTP' },
-        { label: '数据', value: 'Mock Tools' },
+        { label: '模型', value: 'LLM / Mock' },
       ],
       table: [],
     },
@@ -86,7 +92,7 @@ async function sendMessage(message = inputText.value) {
         <p class="eyebrow">Agent Learning</p>
         <h1>业务数据智能问答助手</h1>
         <p class="summary">
-          一个用于学习的最小闭环：Vue 前端输入问题，Node.js 接口服务判断意图，调用 mock 业务数据，再返回分析结果。
+          一个用于学习的最小闭环：Vue 前端输入问题，Node.js 后端选择工具或调用大模型，再返回结构化结果。
         </p>
       </div>
 
@@ -128,7 +134,7 @@ async function sendMessage(message = inputText.value) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, rowIndex) in message.result.table" :key="row.id || rowIndex">
+                  <tr v-for="(row, rowIndex) in message.result.table" :key="row.id || row.name || rowIndex">
                     <td v-for="header in getTableHeaders(message.result.table)" :key="header">
                       {{ row[header] }}
                     </td>
@@ -142,12 +148,12 @@ async function sendMessage(message = inputText.value) {
         </article>
 
         <article v-if="loading" class="message assistant">
-          <div class="bubble">正在分析问题并选择可用工具...</div>
+          <div class="bubble">正在分析问题并选择可用能力...</div>
         </article>
       </div>
 
       <form class="composer" @submit.prevent="sendMessage()">
-        <input v-model="inputText" autocomplete="off" placeholder="输入一个业务问题，比如：最近 7 天有哪些告警？" />
+        <input v-model="inputText" autocomplete="off" placeholder="输入一个问题，比如：最近 7 天有哪些告警？" />
         <button type="submit" :disabled="loading">
           {{ loading ? '分析中' : '发送' }}
         </button>
