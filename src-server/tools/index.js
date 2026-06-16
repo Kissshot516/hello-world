@@ -1,6 +1,6 @@
-import { queryAlertsTool } from './queryAlerts.js';
-import { queryDrillingTool } from './queryDrilling.js';
-import { queryPushPersonsTool } from './queryPushPersons.js';
-import { queryWorkfacesTool } from './queryWorkfaces.js';
+import { queryArtistsTool } from './queryArtists.js';
+import { queryConcertsTool } from './queryConcerts.js';
+import { queryPlaylistsTool } from './queryPlaylists.js';
+import { querySongsTool } from './querySongs.js';
 
-export const tools = [queryAlertsTool, queryDrillingTool, queryPushPersonsTool, queryWorkfacesTool];
+export const tools = [querySongsTool, queryArtistsTool, queryPlaylistsTool, queryConcertsTool];

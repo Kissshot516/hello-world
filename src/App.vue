@@ -2,11 +2,11 @@
 import { nextTick, ref } from 'vue';
 
 const promptList = [
-  '最近 7 天有哪些告警？',
-  '帮我分析一下钻孔异常情况',
-  '通知人员配置是什么？',
-  '工作面概况怎么样？',
-  '用一句话介绍什么是 Agent',
+  '推荐几首适合写代码的歌',
+  '介绍几个华语歌手',
+  '给我一些通勤歌单',
+  '最近有什么演唱会？',
+  '什么是音乐推荐 Agent？',
 ];
 
 const inputText = ref('');
@@ -18,11 +18,11 @@ const messages = ref([
     role: 'assistant',
     result: {
       mode: 'system:welcome',
-      answer: '欢迎来到 Vue 版 Agent 学习 Demo。业务类问题会调用工具，普通问题会尝试调用大模型。',
+      answer: '欢迎来到音乐 Agent 学习 Demo。音乐数据问题会调用工具，普通问题会尝试调用大模型。',
       cards: [
         { label: '前端', value: 'Vue 3' },
         { label: '后端', value: 'Node.js HTTP' },
-        { label: '模型', value: 'LLM / Mock' },
+        { label: '场景', value: 'Music Agent' },
       ],
       table: [],
     },
@@ -89,10 +89,10 @@ async function sendMessage(message = inputText.value) {
   <main class="shell">
     <section class="panel sidebar">
       <div>
-        <p class="eyebrow">Agent Learning</p>
-        <h1>业务数据智能问答助手</h1>
+        <p class="eyebrow">Music Agent</p>
+        <h1>音乐智能问答助手</h1>
         <p class="summary">
-          一个用于学习的最小闭环：Vue 前端输入问题，Node.js 后端选择工具或调用大模型，再返回结构化结果。
+          一个用于学习 Agent 工程的音乐场景：Vue 前端输入问题，Node.js 后端选择音乐工具或调用大模型，再返回结构化结果。
         </p>
       </div>
 
@@ -134,7 +134,7 @@ async function sendMessage(message = inputText.value) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, rowIndex) in message.result.table" :key="row.id || row.name || rowIndex">
+                  <tr v-for="(row, rowIndex) in message.result.table" :key="row.id || row.name || row.title || rowIndex">
                     <td v-for="header in getTableHeaders(message.result.table)" :key="header">
                       {{ row[header] }}
                     </td>
@@ -148,12 +148,12 @@ async function sendMessage(message = inputText.value) {
         </article>
 
         <article v-if="loading" class="message assistant">
-          <div class="bubble">正在分析问题并选择可用能力...</div>
+          <div class="bubble">正在分析音乐问题并选择可用能力...</div>
         </article>
       </div>
 
       <form class="composer" @submit.prevent="sendMessage()">
-        <input v-model="inputText" autocomplete="off" placeholder="输入一个问题，比如：最近 7 天有哪些告警？" />
+        <input v-model="inputText" autocomplete="off" placeholder="输入一个音乐问题，比如：推荐几首适合写代码的歌" />
         <button type="submit" :disabled="loading">
           {{ loading ? '分析中' : '发送' }}
         </button>

@@ -5,11 +5,15 @@ loadEnv();
 const DEFAULT_BASE_URL = 'https://api.deepseek.com/v1';
 const DEFAULT_MODEL = 'deepseek-chat';
 
-export async function generateGeneralAnswer(message) {
+export function hasLlmApiKey() {
+  return Boolean(process.env.LLM_API_KEY);
+}
+
+export async function createChatCompletion(payload) {
   const apiKey = process.env.LLM_API_KEY;
 
   if (!apiKey) {
-    return createMockAnswer(message);
+    throw new Error('LLM_API_KEY is not configured');
   }
 
   const baseUrl = process.env.LLM_BASE_URL || DEFAULT_BASE_URL;
@@ -24,18 +28,8 @@ export async function generateGeneralAnswer(message) {
     },
     body: JSON.stringify({
       model,
-      messages: [
-        {
-          role: 'system',
-          content:
-            '你是一个用于学习 Agent 工程的助手。回答要简洁，优先解释工程概念，并提醒用户当前业务工具包括告警、钻孔、通知人员、工作面概况。',
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
       temperature: 0.3,
+      ...payload,
     }),
   });
 
@@ -44,7 +38,28 @@ export async function generateGeneralAnswer(message) {
     throw new Error(`LLM request failed: ${response.status} ${errorText}`);
   }
 
-  const data = await response.json();
+  return response.json();
+}
+
+export async function generateGeneralAnswer(message) {
+  if (!hasLlmApiKey()) {
+    return createMockAnswer(message);
+  }
+
+  const data = await createChatCompletion({
+    messages: [
+      {
+        role: 'system',
+        content:
+          '你是一个用于学习 Agent 工程的音乐助手。回答要简洁，优先解释音乐推荐和工具调用相关概念，并提醒用户当前音乐工具包括歌曲、歌手、歌单、演唱会。',
+      },
+      {
+        role: 'user',
+        content: message,
+      },
+    ],
+  });
+
   const answer = data.choices?.[0]?.message?.content;
 
   if (!answer) {
@@ -55,5 +70,5 @@ export async function generateGeneralAnswer(message) {
 }
 
 function createMockAnswer(message) {
-  return `这是本地 mock 模型回答：我收到了你的问题“${message}”。当前还没有配置 LLM_API_KEY，所以没有真正请求大模型。你可以继续问业务问题，例如“最近 7 天有哪些告警？”或“工作面概况怎么样？”。`;
+  return `这是本地 mock 模型回答：我收到了你的问题“${message}”。当前还没有配置 LLM_API_KEY，所以没有真正请求大模型。你可以继续问音乐问题，例如“推荐几首适合写代码的歌”或“最近有什么演唱会？”。`;
 }
