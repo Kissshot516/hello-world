@@ -33,7 +33,7 @@ Vue 页面
   -> POST /api/agent/chat
   -> Node.js 服务
   -> 音乐工具选择 / 大模型兜底
-  -> 返回 answer/cards/table
+  -> 返回 answer/cards/table/trace
   -> Vue 页面展示
 ```
 
@@ -68,6 +68,8 @@ copy .env.example .env
 LLM_API_KEY=你的 API Key
 LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_MODEL=deepseek-chat
+LLM_TIMEOUT_MS=15000
+LLM_MAX_RETRIES=2
 ```
 
 重启后端：
@@ -81,6 +83,7 @@ npm run dev:api
 ```text
 音乐数据问题 -> 模型选择工具 -> 后端执行工具 -> 模型总结结果
 普通问题 -> 大模型直接回答
+网络抖动/超时/429/5xx -> 自动重试
 ```
 
 ## 下一步可以加什么
@@ -88,5 +91,5 @@ npm run dev:api
 1. 把 mock 音乐数据换成真实音乐 API。
 2. 增加用户偏好和会话记忆。
 3. 增加流式输出。
-4. 增加工具调用日志。
+4. 优化工具调用日志和错误分类。
 5. 增加收藏歌单功能。

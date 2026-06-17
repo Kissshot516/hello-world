@@ -20,28 +20,42 @@ const toolSchemas = tools.map((tool) => ({
 }));
 
 export async function handleAgentMessage(message) {
+  const trace = [];
   const text = String(message || '').trim();
 
   if (!text) {
-    return createGeneralAnswer('请先输入一个问题。');
+    return createGeneralAnswer('请先输入一个问题。', trace);
   }
 
   if (!hasLlmApiKey()) {
-    return runKeywordFallback(text);
+    trace.push({
+      step: 'api_key_check',
+      status: 'skipped',
+      detail: '未配置 LLM_API_KEY，使用关键词 fallback。',
+    });
+    return runKeywordFallback(text, trace);
   }
 
   try {
-    return await runModelToolCalling(text);
+    return await runModelToolCalling(text, trace);
   } catch (error) {
-    const fallback = await runKeywordFallback(text);
+    trace.push({
+      step: 'agent_fallback',
+      status: 'error',
+      detail: error.message,
+    });
+
+    const fallback = await runKeywordFallback(text, trace);
     return {
       ...fallback,
       answer: `模型工具调用失败，已回退到本地工具选择。错误信息：${error.message}\n\n${fallback.answer}`,
+      trace,
     };
   }
 }
 
-async function runModelToolCalling(message) {
+async function runModelToolCalling(message, trace) {
+  const selectionStart = Date.now();
   const firstResponse = await createChatCompletion({
     messages: [
       {
@@ -61,6 +75,13 @@ async function runModelToolCalling(message) {
   const assistantMessage = firstResponse.choices?.[0]?.message;
   const toolCalls = assistantMessage?.tool_calls || [];
 
+  trace.push({
+    step: 'model_tool_selection',
+    status: 'success',
+    durationMs: Date.now() - selectionStart,
+    tools: toolCalls.map((toolCall) => toolCall.function?.name).filter(Boolean),
+  });
+
   if (!toolCalls.length) {
     return {
       mode: 'chat:general',
@@ -71,14 +92,16 @@ async function runModelToolCalling(message) {
         { label: '下一步', value: '音乐工具调用' },
       ],
       table: [],
+      trace,
     };
   }
 
-  const toolExecutions = toolCalls.map((toolCall) => executeToolCall({ message, toolCall }));
+  const toolExecutions = toolCalls.map((toolCall) => executeToolCall({ message, toolCall, trace }));
   const summary = await summarizeToolResults({
     message,
     assistantMessage,
     toolExecutions,
+    trace,
   });
   const primaryExecution = toolExecutions[0];
   const mergedCards = toolExecutions.flatMap((execution) => execution.result.cards || []);
@@ -94,10 +117,12 @@ async function runModelToolCalling(message) {
       ...mergedCards,
     ],
     table: mergedTable,
+    trace,
   };
 }
 
-function executeToolCall({ message, toolCall }) {
+function executeToolCall({ message, toolCall, trace }) {
+  const start = Date.now();
   const toolName = toolCall.function?.name;
   const selectedTool = tools.find((tool) => tool.name === toolName);
 
@@ -111,6 +136,14 @@ function executeToolCall({ message, toolCall }) {
     ...toolArgs,
   });
 
+  trace.push({
+    step: 'tool_execution',
+    status: 'success',
+    tool: selectedTool.name,
+    durationMs: Date.now() - start,
+    rows: result.table?.length || 0,
+  });
+
   return {
     tool: selectedTool,
     toolCall,
@@ -118,13 +151,14 @@ function executeToolCall({ message, toolCall }) {
   };
 }
 
-async function summarizeToolResults({ message, assistantMessage, toolExecutions }) {
+async function summarizeToolResults({ message, assistantMessage, toolExecutions, trace }) {
   const toolMessages = toolExecutions.map((execution) => ({
     role: 'tool',
     tool_call_id: execution.toolCall.id,
     content: JSON.stringify(execution.result),
   }));
 
+  const summaryStart = Date.now();
   const data = await createChatCompletion({
     messages: [
       {
@@ -140,6 +174,12 @@ async function summarizeToolResults({ message, assistantMessage, toolExecutions 
     ],
   });
 
+  trace.push({
+    step: 'model_summary',
+    status: 'success',
+    durationMs: Date.now() - summaryStart,
+  });
+
   const answer = data.choices?.[0]?.message?.content;
 
   if (!answer) {
@@ -149,7 +189,7 @@ async function summarizeToolResults({ message, assistantMessage, toolExecutions 
   return answer;
 }
 
-async function runKeywordFallback(text) {
+async function runKeywordFallback(text, trace) {
   const matchedTool = tools
     .map((tool) => {
       const score = tool.keywords.filter((keyword) => text.includes(keyword)).length;
@@ -158,20 +198,53 @@ async function runKeywordFallback(text) {
     .filter((tool) => tool.score > 0)
     .sort((a, b) => b.score - a.score || (b.priority || 0) - (a.priority || 0))[0];
 
+  trace.push({
+    step: 'keyword_fallback',
+    status: matchedTool ? 'success' : 'skipped',
+    tool: matchedTool?.name,
+    detail: matchedTool ? '使用关键词匹配选择工具。' : '没有匹配到本地工具。',
+  });
+
   if (!matchedTool) {
-    return createGeneralAnswer(text);
+    return createGeneralAnswer(text, trace);
   }
 
-  return matchedTool.run({ message: text });
+  const start = Date.now();
+  const result = matchedTool.run({ message: text });
+  trace.push({
+    step: 'tool_execution',
+    status: 'success',
+    tool: matchedTool.name,
+    durationMs: Date.now() - start,
+    rows: result.table?.length || 0,
+  });
+
+  return {
+    ...result,
+    trace,
+  };
 }
 
-async function createGeneralAnswer(message) {
+async function createGeneralAnswer(message, trace) {
   let answer;
+  const start = Date.now();
 
   try {
     answer = await generateGeneralAnswer(message);
+    trace.push({
+      step: 'general_answer',
+      status: 'success',
+      durationMs: Date.now() - start,
+      source: hasLlmApiKey() ? 'llm' : 'mock',
+    });
   } catch (error) {
     answer = `大模型调用失败，已回退到本地回答。错误信息：${error.message}`;
+    trace.push({
+      step: 'general_answer',
+      status: 'error',
+      durationMs: Date.now() - start,
+      detail: error.message,
+    });
   }
 
   return {
@@ -183,6 +256,7 @@ async function createGeneralAnswer(message) {
       { label: '下一步', value: '音乐工具调用' },
     ],
     table: [],
+    trace,
   };
 }
 

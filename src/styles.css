@@ -169,6 +169,32 @@ h1 {
   border-radius: 8px;
 }
 
+.tracePanel {
+  margin-top: 14px;
+  padding: 12px;
+  color: #40516a;
+  background: #ffffff;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+}
+
+.traceTitle {
+  margin-bottom: 8px;
+  color: #172033;
+  font-weight: 700;
+}
+
+.tracePanel ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.tracePanel li {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

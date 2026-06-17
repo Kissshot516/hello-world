@@ -25,6 +25,7 @@ const messages = ref([
         { label: '场景', value: 'Music Agent' },
       ],
       table: [],
+      trace: [],
     },
   },
 ]);
@@ -38,6 +39,16 @@ async function scrollToBottom() {
 
 function getTableHeaders(table) {
   return table?.length ? Object.keys(table[0]) : [];
+}
+
+function formatTraceItem(item) {
+  const parts = [item.step, item.status];
+  if (item.tool) parts.push(`tool=${item.tool}`);
+  if (item.tools?.length) parts.push(`tools=${item.tools.join(', ')}`);
+  if (typeof item.rows === 'number') parts.push(`rows=${item.rows}`);
+  if (typeof item.durationMs === 'number') parts.push(`${item.durationMs}ms`);
+  if (item.detail) parts.push(item.detail);
+  return parts.join(' | ');
 }
 
 async function sendMessage(message = inputText.value) {
@@ -141,6 +152,15 @@ async function sendMessage(message = inputText.value) {
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div v-if="message.result.trace?.length" class="tracePanel">
+              <div class="traceTitle">调用链路</div>
+              <ol>
+                <li v-for="(item, index) in message.result.trace" :key="`${item.step}-${index}`">
+                  {{ formatTraceItem(item) }}
+                </li>
+              </ol>
             </div>
           </div>
 
