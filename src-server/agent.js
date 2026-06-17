@@ -59,9 +59,9 @@ async function runModelToolCalling(message) {
   });
 
   const assistantMessage = firstResponse.choices?.[0]?.message;
-  const toolCall = assistantMessage?.tool_calls?.[0];
+  const toolCalls = assistantMessage?.tool_calls || [];
 
-  if (!toolCall) {
+  if (!toolCalls.length) {
     return {
       mode: 'chat:general',
       answer: assistantMessage?.content || (await generateGeneralAnswer(message)),
@@ -74,6 +74,30 @@ async function runModelToolCalling(message) {
     };
   }
 
+  const toolExecutions = toolCalls.map((toolCall) => executeToolCall({ message, toolCall }));
+  const summary = await summarizeToolResults({
+    message,
+    assistantMessage,
+    toolExecutions,
+  });
+  const primaryExecution = toolExecutions[0];
+  const mergedCards = toolExecutions.flatMap((execution) => execution.result.cards || []);
+  const mergedTable = toolExecutions.flatMap((execution) => execution.result.table || []);
+
+  return {
+    ...primaryExecution.result,
+    mode: `llm:${primaryExecution.result.mode}`,
+    answer: summary,
+    cards: [
+      { label: '工具选择', value: toolExecutions.map((execution) => execution.tool.name).join(', ') },
+      { label: '选择方式', value: '模型 tool calling' },
+      ...mergedCards,
+    ],
+    table: mergedTable,
+  };
+}
+
+function executeToolCall({ message, toolCall }) {
   const toolName = toolCall.function?.name;
   const selectedTool = tools.find((tool) => tool.name === toolName);
 
@@ -82,54 +106,44 @@ async function runModelToolCalling(message) {
   }
 
   const toolArgs = parseToolArguments(toolCall.function?.arguments);
-  const toolResult = selectedTool.run({
+  const result = selectedTool.run({
     message,
     ...toolArgs,
   });
 
-  const summary = await summarizeToolResult({
-    message,
-    assistantMessage,
-    toolCall,
-    toolResult,
-  });
-
   return {
-    ...toolResult,
-    mode: `llm:${toolResult.mode}`,
-    answer: summary,
-    cards: [
-      { label: '工具选择', value: selectedTool.name },
-      { label: '选择方式', value: '模型 tool calling' },
-      ...(toolResult.cards || []),
-    ],
+    tool: selectedTool,
+    toolCall,
+    result,
   };
 }
 
-async function summarizeToolResult({ message, assistantMessage, toolCall, toolResult }) {
+async function summarizeToolResults({ message, assistantMessage, toolExecutions }) {
+  const toolMessages = toolExecutions.map((execution) => ({
+    role: 'tool',
+    tool_call_id: execution.toolCall.id,
+    content: JSON.stringify(execution.result),
+  }));
+
   const data = await createChatCompletion({
     messages: [
       {
         role: 'system',
-        content: '你是一个音乐数据分析助手。根据工具返回的数据，用简洁中文总结结论，并给出试听、收藏或后续探索建议。',
+        content: '你是一个音乐数据分析助手。根据所有工具返回的数据，用简洁中文总结结论，并给出试听、收藏或后续探索建议。',
       },
       {
         role: 'user',
         content: message,
       },
       assistantMessage,
-      {
-        role: 'tool',
-        tool_call_id: toolCall.id,
-        content: JSON.stringify(toolResult),
-      },
+      ...toolMessages,
     ],
   });
 
   const answer = data.choices?.[0]?.message?.content;
 
   if (!answer) {
-    return toolResult.answer;
+    return toolExecutions[0]?.result.answer || '工具已返回结果，但模型没有生成总结。';
   }
 
   return answer;
