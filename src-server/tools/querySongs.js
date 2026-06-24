@@ -152,35 +152,49 @@ export const querySongsTool = {
       genre: normalize(genre),
       language: normalize(language),
     };
-    const hasSearchIntent = Boolean(keyword || scene || mood || genre || language);
 
-    const rankedSongs = mockSongs
-      .filter((song) => matchesRequiredFilters(song, filters))
-      .map((song) => ({
-        song,
-        score: getSongScore(song, query, filters),
-      }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score || b.song.popularity - a.song.popularity)
-      .slice(0, limit)
-      .map((item) => item.song);
+    const exactMatches = rankSongs(
+      mockSongs.filter((song) => matchesExactFilters(song, filters)),
+      query,
+      filters
+    ).slice(0, limit);
 
-    const resultSongs = rankedSongs.length
-      ? rankedSongs
-      : hasSearchIntent
-        ? []
-        : mockSongs.slice().sort((a, b) => b.popularity - a.popularity).slice(0, limit);
+    const relaxedMatches = rankSongs(
+      mockSongs.filter((song) => !exactMatches.includes(song) && matchesRelaxedFilters(song, query, filters)),
+      query,
+      filters
+    ).slice(0, Math.max(limit - exactMatches.length, 0));
+
+    const fallbackMatches = mockSongs
+      .filter((song) => !exactMatches.includes(song) && !relaxedMatches.includes(song))
+      .sort((a, b) => b.popularity - a.popularity)
+      .slice(0, Math.max(limit - exactMatches.length - relaxedMatches.length, 0));
+
+    const resultSongs = [
+      ...tagMatches(exactMatches, '完全匹配'),
+      ...tagMatches(relaxedMatches, '相近推荐'),
+      ...tagMatches(fallbackMatches, '热门补充'),
+    ];
     const topSong = resultSongs[0];
+    const meta = createResultMeta({
+      requestedLimit: limit,
+      exactCount: exactMatches.length,
+      relaxedCount: relaxedMatches.length,
+      fallbackCount: fallbackMatches.length,
+      totalCount: resultSongs.length,
+    });
 
     return {
       mode: 'tool:querySongs',
-      answer: buildAnswer({ resultSongs, topSong, args }),
+      answer: buildAnswer({ resultSongs, topSong, args, meta }),
       cards: [
-        { label: '匹配歌曲', value: `${resultSongs.length} 首` },
-        { label: '推荐单曲', value: topSong?.title || '暂无匹配' },
+        { label: '返回歌曲', value: `${resultSongs.length} 首` },
+        { label: '完全匹配', value: `${meta.exactCount} 首` },
+        { label: '结果质量', value: meta.qualityLabel },
         { label: '结构化参数', value: formatParams(args) },
       ],
       table: resultSongs,
+      meta,
     };
   },
 };
@@ -206,6 +220,17 @@ function validateSongArgs(rawArgs = {}) {
   return { args, warnings };
 }
 
+function rankSongs(songs, query, filters) {
+  return songs
+    .map((song) => ({
+      song,
+      score: getSongScore(song, query, filters),
+    }))
+    .filter((item) => item.score > 0 || !hasActiveFilters(filters))
+    .sort((a, b) => b.score - a.score || b.song.popularity - a.song.popularity)
+    .map((item) => item.song);
+}
+
 function getSongScore(song, query, filters) {
   let score = 0;
 
@@ -223,7 +248,7 @@ function getSongScore(song, query, filters) {
   return score;
 }
 
-function matchesRequiredFilters(song, filters) {
+function matchesExactFilters(song, filters) {
   if (filters.scene && normalize(song.scene) !== filters.scene) return false;
   if (filters.mood && normalize(song.mood) !== filters.mood) return false;
   if (filters.genre && !normalize(song.genre).includes(filters.genre)) return false;
@@ -232,12 +257,77 @@ function matchesRequiredFilters(song, filters) {
   return true;
 }
 
-function buildAnswer({ resultSongs, topSong, args }) {
-  if (!topSong) {
-    return `根据结构化参数筛选后，当前样例曲库没有匹配歌曲。参数：${formatParams(args)}。你可以换一个场景、语言或风格继续测试。`;
+function matchesRelaxedFilters(song, query, filters) {
+  const score = getSongScore(song, query, filters);
+  if (score <= 0) return false;
+
+  return Object.entries(filters).some(([key, value]) => {
+    if (!value) return false;
+    if (key === 'genre') return normalize(song.genre).includes(value);
+    return normalize(song[key]) === value;
+  });
+}
+
+function hasActiveFilters(filters) {
+  return Object.values(filters).some(Boolean);
+}
+
+function tagMatches(songs, matchType) {
+  return songs.map((song) => ({
+    ...song,
+    matchType,
+  }));
+}
+
+function createResultMeta({ requestedLimit, exactCount, relaxedCount, fallbackCount, totalCount }) {
+  const fallbackUsed = fallbackCount > 0;
+  const quality = getQuality({ requestedLimit, exactCount, relaxedCount, fallbackCount, totalCount });
+  const qualityLabel = {
+    exact: '完全满足',
+    partial: '部分满足',
+    fallback: '热门补充',
+    empty: '无结果',
+  }[quality];
+
+  return {
+    requestedLimit,
+    exactCount,
+    relaxedCount,
+    fallbackCount,
+    fallbackUsed,
+    totalCount,
+    quality,
+    qualityLabel,
+    message: buildQualityMessage({ requestedLimit, exactCount, relaxedCount, fallbackCount, totalCount }),
+  };
+}
+
+function getQuality({ requestedLimit, exactCount, relaxedCount, fallbackCount, totalCount }) {
+  if (totalCount === 0) return 'empty';
+  if (exactCount >= requestedLimit) return 'exact';
+  if (exactCount > 0 || relaxedCount > 0) return 'partial';
+  if (fallbackCount > 0) return 'fallback';
+  return 'empty';
+}
+
+function buildQualityMessage({ requestedLimit, exactCount, relaxedCount, fallbackCount, totalCount }) {
+  if (totalCount === 0) {
+    return `没有找到可推荐歌曲，建议放宽场景、语言或情绪条件。`;
   }
 
-  return `根据结构化参数筛选后，当前返回 ${resultSongs.length} 首样例歌曲。优先推荐《${topSong.title}》，歌手是 ${topSong.artist}，风格是 ${topSong.genre}，适合${topSong.scene}场景。参数：${formatParams(args)}。`;
+  if (exactCount >= requestedLimit) {
+    return `完全匹配 ${exactCount} 首，已满足用户请求数量 ${requestedLimit}。`;
+  }
+
+  return `完全匹配 ${exactCount} 首，不足 ${requestedLimit} 首；补充相近推荐 ${relaxedCount} 首、热门补充 ${fallbackCount} 首。`;
+}
+
+function buildAnswer({ resultSongs, topSong, args, meta }) {
+  if (!topSong) {
+    return `根据结构化参数筛选后，当前样例曲库没有可推荐歌曲。参数：${formatParams(args)}。${meta.message}`;
+  }
+
+  return `根据结构化参数筛选后，当前返回 ${resultSongs.length} 首样例歌曲。优先推荐《${topSong.title}》，歌手是 ${topSong.artist}，风格是 ${topSong.genre}，适合${topSong.scene}场景。${meta.message} 参数：${formatParams(args)}。`;
 }
 
 function resolveChoice(rawValue, sourceText, choices, label, warnings) {
@@ -293,8 +383,8 @@ function parseLimit(value) {
     return Number(digitMatch[0]);
   }
 
-  const chineseNumber = CHINESE_NUMBER_MAP[text];
-  return chineseNumber || null;
+  const chineseNumberEntry = Object.entries(CHINESE_NUMBER_MAP).find(([key]) => text.includes(key));
+  return chineseNumberEntry?.[1] || null;
 }
 
 function formatParams(params) {

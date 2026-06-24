@@ -46,6 +46,11 @@ function formatTraceItem(item) {
   if (item.tool) parts.push(`tool=${item.tool}`);
   if (item.tools?.length) parts.push(`tools=${item.tools.join(', ')}`);
   if (item.args && Object.keys(item.args).length) parts.push(`args=${JSON.stringify(item.args)}`);
+  if (typeof item.requestedLimit === 'number') parts.push(`requested=${item.requestedLimit}`);
+  if (typeof item.exactCount === 'number') parts.push(`exact=${item.exactCount}`);
+  if (typeof item.relaxedCount === 'number') parts.push(`relaxed=${item.relaxedCount}`);
+  if (typeof item.fallbackCount === 'number') parts.push(`fallback=${item.fallbackCount}`);
+  if (typeof item.fallbackUsed === 'boolean') parts.push(`fallbackUsed=${item.fallbackUsed}`);
   if (typeof item.rows === 'number') parts.push(`rows=${item.rows}`);
   if (typeof item.durationMs === 'number') parts.push(`${item.durationMs}ms`);
   if (item.detail) parts.push(item.detail);

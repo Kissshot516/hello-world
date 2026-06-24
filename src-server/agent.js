@@ -161,6 +161,7 @@ function executeToolCall({ message, toolCall, trace }) {
       rows: result.table?.length || 0,
       args: sanitizeTraceArgs(toolInput),
     });
+    recordResultQuality(selectedTool, result, trace);
 
     return {
       tool: selectedTool,
@@ -260,6 +261,7 @@ async function runKeywordFallback(text, trace) {
       rows: result.table?.length || 0,
       args: sanitizeTraceArgs(toolInput),
     });
+    recordResultQuality(matchedTool, result, trace);
 
     return {
       ...result,
@@ -360,6 +362,23 @@ function createToolErrorResult(toolName, message) {
     ],
     table: [],
   };
+}
+
+function recordResultQuality(tool, result, trace) {
+  const meta = result.meta;
+  if (!meta) return;
+
+  trace.push({
+    step: 'result_quality',
+    status: meta.quality || 'unknown',
+    tool: tool.name,
+    requestedLimit: meta.requestedLimit,
+    exactCount: meta.exactCount,
+    relaxedCount: meta.relaxedCount,
+    fallbackCount: meta.fallbackCount,
+    fallbackUsed: meta.fallbackUsed,
+    detail: meta.message,
+  });
 }
 
 function sanitizeTraceArgs(args) {
