@@ -142,6 +142,7 @@ export const querySongsTool = {
     },
   },
   validateArgs: validateSongArgs,
+  mergeMemoryArgs: mergeSongMemoryArgs,
   run(rawArgs = {}) {
     const { args } = validateSongArgs(rawArgs);
     const { message, keyword, scene, mood, genre, language, limit } = args;
@@ -220,6 +221,56 @@ function validateSongArgs(rawArgs = {}) {
   return { args, warnings };
 }
 
+function mergeSongMemoryArgs(previousArgs = {}, rawArgs = {}) {
+  const partialArgs = extractPartialSongArgs(rawArgs);
+  const mergedArgs = {
+    ...previousArgs,
+    ...partialArgs,
+    message: toText(rawArgs.message) || toText(previousArgs.message),
+    keyword: partialArgs.keyword ?? previousArgs.keyword ?? '',
+  };
+
+  if (partialArgs.limit === undefined) {
+    if (shouldIncreaseLimit(rawArgs.message)) {
+      mergedArgs.limit = Math.min(Number(previousArgs.limit || 5) + 2, 10);
+    }
+
+    if (shouldDecreaseLimit(rawArgs.message)) {
+      mergedArgs.limit = Math.max(Number(previousArgs.limit || 5) - 2, 1);
+    }
+  }
+
+  return validateSongArgs(mergedArgs).args;
+}
+
+function extractPartialSongArgs(rawArgs = {}) {
+  const sourceText = normalize(
+    [rawArgs.message, rawArgs.keyword, rawArgs.scene, rawArgs.mood, rawArgs.genre, rawArgs.language]
+      .filter(Boolean)
+      .join(' ')
+  );
+  const partialArgs = {};
+  const keyword = toText(rawArgs.keyword);
+  const scene = resolvePartialChoice(rawArgs.scene, sourceText, SCENE_CHOICES);
+  const mood = resolvePartialChoice(rawArgs.mood, sourceText, MOOD_CHOICES);
+  const genre = resolvePartialChoice(rawArgs.genre, sourceText, GENRE_CHOICES);
+  const language = resolvePartialChoice(rawArgs.language, sourceText, LANGUAGE_CHOICES);
+  const limit = parseLimit(rawArgs.limit) ?? parseLimit(sourceText);
+
+  if (keyword) partialArgs.keyword = keyword;
+  if (scene) partialArgs.scene = scene;
+  if (mood) partialArgs.mood = mood;
+  if (genre) partialArgs.genre = genre;
+  if (language) partialArgs.language = language;
+  if (limit !== null) partialArgs.limit = limit;
+
+  return partialArgs;
+}
+
+function resolvePartialChoice(rawValue, sourceText, choices) {
+  return matchChoice(toText(rawValue), choices) || matchChoice(sourceText, choices);
+}
+
 function rankSongs(songs, query, filters) {
   return songs
     .map((song) => ({
@@ -258,6 +309,8 @@ function matchesExactFilters(song, filters) {
 }
 
 function matchesRelaxedFilters(song, query, filters) {
+  if (filters.language && normalize(song.language) !== filters.language) return false;
+
   const score = getSongScore(song, query, filters);
   if (score <= 0) return false;
 
@@ -347,11 +400,20 @@ function matchChoice(text, choices) {
   const normalizedText = normalize(text);
   if (!normalizedText) return '';
 
-  const matched = choices.find((choice) =>
-    [choice.value, ...choice.aliases].some((alias) => normalizedText.includes(normalize(alias)))
-  );
+  let matchedValue = '';
+  let matchedIndex = -1;
 
-  return matched?.value || '';
+  for (const choice of choices) {
+    for (const alias of [choice.value, ...choice.aliases]) {
+      const index = normalizedText.lastIndexOf(normalize(alias));
+      if (index > matchedIndex) {
+        matchedIndex = index;
+        matchedValue = choice.value;
+      }
+    }
+  }
+
+  return matchedValue;
 }
 
 function resolveLimit(rawLimit, sourceText, warnings) {
@@ -378,13 +440,23 @@ function parseLimit(value) {
   const text = toText(value);
   if (!text) return null;
 
-  const digitMatch = text.match(/\d+/);
+  const digitMatch = text.match(/\d+\s*首?/);
   if (digitMatch) {
-    return Number(digitMatch[0]);
+    return Number(digitMatch[0].match(/\d+/)[0]);
   }
 
-  const chineseNumberEntry = Object.entries(CHINESE_NUMBER_MAP).find(([key]) => text.includes(key));
-  return chineseNumberEntry?.[1] || null;
+  const chineseNumberMatch = text.match(/([一二两三四五六七八九十])\s*首/);
+  if (!chineseNumberMatch) return null;
+
+  return CHINESE_NUMBER_MAP[chineseNumberMatch[1]] || null;
+}
+
+function shouldIncreaseLimit(text) {
+  return ['多来', '再来', '多几', '更多', '加几'].some((keyword) => toText(text).includes(keyword));
+}
+
+function shouldDecreaseLimit(text) {
+  return ['少点', '少一点', '少几', '少来'].some((keyword) => toText(text).includes(keyword));
 }
 
 function formatParams(params) {

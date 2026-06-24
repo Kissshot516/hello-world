@@ -18,7 +18,9 @@ async function readBody(req) {
 async function handleAgentChat(req, res) {
   try {
     const body = await readBody(req);
-    const result = await handleAgentMessage(body.message);
+    const result = await handleAgentMessage(body.message, {
+      conversationId: body.conversationId,
+    });
     sendJson(res, 200, { code: 0, data: result });
   } catch (error) {
     sendJson(res, 500, { code: 500, message: error.message || 'Agent service error' });

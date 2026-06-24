@@ -9,6 +9,7 @@ const promptList = [
   '什么是音乐推荐 Agent？',
 ];
 
+const conversationId = getConversationId();
 const inputText = ref('');
 const loading = ref(false);
 const messagesRef = ref(null);
@@ -57,6 +58,21 @@ function formatTraceItem(item) {
   return parts.join(' | ');
 }
 
+function getConversationId() {
+  const storageKey = 'agent-learning-demo-conversation-id';
+
+  try {
+    const savedId = localStorage.getItem(storageKey);
+    if (savedId) return savedId;
+
+    const nextId = crypto.randomUUID();
+    localStorage.setItem(storageKey, nextId);
+    return nextId;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
 async function sendMessage(message = inputText.value) {
   const text = message.trim();
   if (!text || loading.value) return;
@@ -75,7 +91,7 @@ async function sendMessage(message = inputText.value) {
     const response = await fetch('/api/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, conversationId }),
     });
 
     const json = await response.json();
