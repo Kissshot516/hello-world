@@ -1,21 +1,23 @@
 import { createChatCompletion, generateGeneralAnswer, hasLlmApiKey } from './llm/llmClient.js';
 import { tools } from './tools/index.js';
 
+const defaultToolSchema = {
+  type: 'object',
+  properties: {
+    message: {
+      type: 'string',
+      description: '用户的原始问题。',
+    },
+  },
+  required: ['message'],
+};
+
 const toolSchemas = tools.map((tool) => ({
   type: 'function',
   function: {
     name: tool.name,
     description: tool.description,
-    parameters: {
-      type: 'object',
-      properties: {
-        message: {
-          type: 'string',
-          description: '用户的原始问题。',
-        },
-      },
-      required: ['message'],
-    },
+    parameters: tool.schema || defaultToolSchema,
   },
 }));
 
@@ -61,7 +63,7 @@ async function runModelToolCalling(message, trace) {
       {
         role: 'system',
         content:
-          '你是一个音乐推荐 Agent。你可以根据用户问题选择合适工具。涉及歌曲、歌手、歌单、演唱会时优先调用工具；普通音乐概念问题直接回答。',
+          '你是一个音乐推荐 Agent。你可以根据用户问题选择合适工具。涉及歌曲、歌手、歌单、演唱会时优先调用工具；普通音乐概念问题直接回答。调用工具时，请尽量从用户问题中提取结构化参数，例如场景、心情、风格、关键词和数量。',
       },
       {
         role: 'user',
@@ -127,28 +129,62 @@ function executeToolCall({ message, toolCall, trace }) {
   const selectedTool = tools.find((tool) => tool.name === toolName);
 
   if (!selectedTool) {
-    throw new Error(`Unknown tool selected by model: ${toolName}`);
+    const result = createToolErrorResult(toolName || 'unknown', `模型选择了未注册工具：${toolName}`);
+    trace.push({
+      step: 'tool_execution',
+      status: 'error',
+      tool: toolName || 'unknown',
+      durationMs: Date.now() - start,
+      rows: 0,
+      detail: result.answer,
+    });
+
+    return {
+      tool: { name: toolName || 'unknown' },
+      toolCall,
+      result,
+    };
   }
 
   const toolArgs = parseToolArguments(toolCall.function?.arguments);
-  const result = selectedTool.run({
-    message,
-    ...toolArgs,
-  });
+  let toolInput = { message, ...toolArgs };
 
-  trace.push({
-    step: 'tool_execution',
-    status: 'success',
-    tool: selectedTool.name,
-    durationMs: Date.now() - start,
-    rows: result.table?.length || 0,
-  });
+  try {
+    toolInput = validateToolInput(selectedTool, toolInput, trace);
+    const result = selectedTool.run(toolInput);
 
-  return {
-    tool: selectedTool,
-    toolCall,
-    result,
-  };
+    trace.push({
+      step: 'tool_execution',
+      status: 'success',
+      tool: selectedTool.name,
+      durationMs: Date.now() - start,
+      rows: result.table?.length || 0,
+      args: sanitizeTraceArgs(toolInput),
+    });
+
+    return {
+      tool: selectedTool,
+      toolCall,
+      result,
+    };
+  } catch (error) {
+    const result = createToolErrorResult(selectedTool.name, error.message);
+    trace.push({
+      step: 'tool_execution',
+      status: 'error',
+      tool: selectedTool.name,
+      durationMs: Date.now() - start,
+      rows: 0,
+      args: sanitizeTraceArgs(toolInput),
+      detail: error.message,
+    });
+
+    return {
+      tool: selectedTool,
+      toolCall,
+      result,
+    };
+  }
 }
 
 async function summarizeToolResults({ message, assistantMessage, toolExecutions, trace }) {
@@ -163,7 +199,8 @@ async function summarizeToolResults({ message, assistantMessage, toolExecutions,
     messages: [
       {
         role: 'system',
-        content: '你是一个音乐数据分析助手。根据所有工具返回的数据，用简洁中文总结结论，并给出试听、收藏或后续探索建议。',
+        content:
+          '你是一个音乐数据分析助手。根据所有工具返回的数据，用简洁中文总结结论，并给出试听、收藏或后续探索建议。',
       },
       {
         role: 'user',
@@ -210,19 +247,40 @@ async function runKeywordFallback(text, trace) {
   }
 
   const start = Date.now();
-  const result = matchedTool.run({ message: text });
-  trace.push({
-    step: 'tool_execution',
-    status: 'success',
-    tool: matchedTool.name,
-    durationMs: Date.now() - start,
-    rows: result.table?.length || 0,
-  });
+  let toolInput = { message: text };
 
-  return {
-    ...result,
-    trace,
-  };
+  try {
+    toolInput = validateToolInput(matchedTool, toolInput, trace);
+    const result = matchedTool.run(toolInput);
+    trace.push({
+      step: 'tool_execution',
+      status: 'success',
+      tool: matchedTool.name,
+      durationMs: Date.now() - start,
+      rows: result.table?.length || 0,
+      args: sanitizeTraceArgs(toolInput),
+    });
+
+    return {
+      ...result,
+      trace,
+    };
+  } catch (error) {
+    trace.push({
+      step: 'tool_execution',
+      status: 'error',
+      tool: matchedTool.name,
+      durationMs: Date.now() - start,
+      rows: 0,
+      args: sanitizeTraceArgs(toolInput),
+      detail: error.message,
+    });
+
+    return {
+      ...createToolErrorResult(matchedTool.name, error.message),
+      trace,
+    };
+  }
 }
 
 async function createGeneralAnswer(message, trace) {
@@ -268,4 +326,46 @@ function parseToolArguments(rawArguments) {
   } catch {
     return {};
   }
+}
+
+function validateToolInput(tool, input, trace) {
+  if (typeof tool.validateArgs !== 'function') {
+    return input;
+  }
+
+  const validation = tool.validateArgs(input);
+  const args = validation.args || input;
+  const warnings = validation.warnings || [];
+
+  if (trace) {
+    trace.push({
+      step: 'argument_validation',
+      status: warnings.length ? 'warning' : 'success',
+      tool: tool.name,
+      args: sanitizeTraceArgs(args),
+      detail: warnings.join('；'),
+    });
+  }
+
+  return args;
+}
+
+function createToolErrorResult(toolName, message) {
+  return {
+    mode: 'tool:error',
+    answer: `工具 ${toolName} 执行失败：${message}`,
+    cards: [
+      { label: '失败工具', value: toolName },
+      { label: '错误类型', value: 'tool_execution_error' },
+    ],
+    table: [],
+  };
+}
+
+function sanitizeTraceArgs(args) {
+  return Object.fromEntries(
+    Object.entries(args || {}).filter(
+      ([key, value]) => key !== 'message' && value !== undefined && value !== null && value !== ''
+    )
+  );
 }

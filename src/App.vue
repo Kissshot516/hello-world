@@ -45,6 +45,7 @@ function formatTraceItem(item) {
   const parts = [item.step, item.status];
   if (item.tool) parts.push(`tool=${item.tool}`);
   if (item.tools?.length) parts.push(`tools=${item.tools.join(', ')}`);
+  if (item.args && Object.keys(item.args).length) parts.push(`args=${JSON.stringify(item.args)}`);
   if (typeof item.rows === 'number') parts.push(`rows=${item.rows}`);
   if (typeof item.durationMs === 'number') parts.push(`${item.durationMs}ms`);
   if (item.detail) parts.push(item.detail);
