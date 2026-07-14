@@ -2,11 +2,11 @@
 import { nextTick, ref } from 'vue';
 
 const promptList = [
-  '推荐几首适合写代码的歌',
+  '推荐5首适合通勤听的日语歌，轻松一点',
+  '换成中文',
+  '多来几首',
+  '不要轻松的，燃一点',
   '介绍几个华语歌手',
-  '给我一些通勤歌单',
-  '最近有什么演唱会？',
-  '什么是音乐推荐 Agent？',
 ];
 
 const conversationId = getConversationId();
@@ -19,11 +19,12 @@ const messages = ref([
     role: 'assistant',
     result: {
       mode: 'system:welcome',
-      answer: '欢迎来到音乐 Agent 学习 Demo。音乐数据问题会调用工具，普通问题会尝试调用大模型。',
+      answer:
+        '欢迎来到音乐 Agent 学习台。你可以用自然语言查询歌曲、歌手、歌单或演唱会，也可以连续追问，让 Agent 继承上一轮条件。',
       cards: [
         { label: '前端', value: 'Vue 3' },
-        { label: '后端', value: 'Node.js HTTP' },
-        { label: '场景', value: 'Music Agent' },
+        { label: '后端', value: 'Node.js' },
+        { label: '模型', value: 'DeepSeek' },
       ],
       table: [],
       trace: [],
@@ -119,17 +120,33 @@ async function sendMessage(message = inputText.value) {
 </script>
 
 <template>
-  <main class="shell">
-    <section class="panel sidebar">
-      <div>
-        <p class="eyebrow">Music Agent</p>
-        <h1>音乐智能问答助手</h1>
-        <p class="summary">
-          一个用于学习 Agent 工程的音乐场景：Vue 前端输入问题，Node.js 后端选择音乐工具或调用大模型，再返回结构化结果。
-        </p>
+  <main class="appShell">
+    <aside class="sidebar">
+      <div class="brandBlock">
+        <div class="brandMark">MA</div>
+        <div>
+          <p class="eyebrow">Music Agent</p>
+          <h1>音乐推荐学习台</h1>
+        </div>
       </div>
 
-      <div class="tips">
+      <p class="summary">
+        用一个小型音乐场景练习 Agent 工程：工具调用、参数校验、多轮记忆、结果质量和 trace 调试。
+      </p>
+
+      <div class="statusGrid">
+        <div class="statusItem">
+          <span>工具</span>
+          <strong>4</strong>
+        </div>
+        <div class="statusItem">
+          <span>记忆</span>
+          <strong>开启</strong>
+        </div>
+      </div>
+
+      <section class="quickPanel">
+        <div class="sectionTitle">快捷提问</div>
         <button
           v-for="prompt in promptList"
           :key="prompt"
@@ -140,17 +157,29 @@ async function sendMessage(message = inputText.value) {
         >
           {{ prompt }}
         </button>
-      </div>
-    </section>
+      </section>
+    </aside>
 
-    <section class="panel workspace">
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Agent Console</p>
+          <h2>对话与执行链路</h2>
+        </div>
+        <div class="sessionBadge">会话已连接</div>
+      </header>
+
       <div ref="messagesRef" class="messages">
         <article v-for="message in messages" :key="message.id" class="message" :class="message.role">
           <div v-if="message.result" class="bubble result">
-            <div class="mode">{{ message.result.mode }}</div>
-            <p>{{ message.result.answer }}</p>
+            <div class="bubbleHeader">
+              <span class="avatar">A</span>
+              <span class="mode">{{ message.result.mode }}</span>
+            </div>
 
-            <div class="metrics">
+            <p class="answerText">{{ message.result.answer }}</p>
+
+            <div v-if="message.result.cards?.length" class="metrics">
               <div v-for="card in message.result.cards" :key="card.label" class="metric">
                 <span>{{ card.label }}</span>
                 <strong>{{ card.value }}</strong>
@@ -176,26 +205,32 @@ async function sendMessage(message = inputText.value) {
               </table>
             </div>
 
-            <div v-if="message.result.trace?.length" class="tracePanel">
-              <div class="traceTitle">调用链路</div>
+            <details v-if="message.result.trace?.length" class="tracePanel" open>
+              <summary>调用链路</summary>
               <ol>
                 <li v-for="(item, index) in message.result.trace" :key="`${item.step}-${index}`">
                   {{ formatTraceItem(item) }}
                 </li>
               </ol>
-            </div>
+            </details>
           </div>
 
-          <div v-else class="bubble">{{ message.text }}</div>
+          <div v-else class="bubble userBubble">
+            <span class="avatar">U</span>
+            <span>{{ message.text }}</span>
+          </div>
         </article>
 
         <article v-if="loading" class="message assistant">
-          <div class="bubble">正在分析音乐问题并选择可用能力...</div>
+          <div class="bubble loadingBubble">
+            <span class="loader"></span>
+            <span>正在分析问题并选择工具...</span>
+          </div>
         </article>
       </div>
 
       <form class="composer" @submit.prevent="sendMessage()">
-        <input v-model="inputText" autocomplete="off" placeholder="输入一个音乐问题，比如：推荐几首适合写代码的歌" />
+        <input v-model="inputText" autocomplete="off" placeholder="输入音乐问题，例如：推荐5首适合通勤听的日语歌" />
         <button type="submit" :disabled="loading">
           {{ loading ? '分析中' : '发送' }}
         </button>
